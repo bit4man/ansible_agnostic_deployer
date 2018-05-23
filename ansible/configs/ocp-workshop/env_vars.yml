@@ -14,7 +14,7 @@
 ###### OR PASS as "-e" args to ansible-playbook command
 
 ### Common Host settings
-repo_method: file # Other Options are: file, satellite and rhn
+repo_method: rhn # Other Options are: file, satellite and rhn
 # Do you want to run a full yum update
 update_packages: true
 #If using repo_method: satellite, you must set these values as well.
@@ -49,7 +49,7 @@ install_ipa_client: false
 remove_self_provisioners: false
 install_lets_encrypt_certificates: false
 # you can also use: allow_all, htpasswd, ldap
-install_idm: ldap
+install_idm: htpasswd
 idm_ca_url: http://ipa.opentlc.com/ipa/config/ca.crt
 install_metrics: true
 install_logging: true
@@ -93,7 +93,7 @@ az_resource_group: "{{ project_tag }}"
 ### Route 53 Zone ID (AWS)
 # This is the Route53 HostedZoneId where you will create your Public DNS entries
 # This only needs to be defined if your CF template uses route53
-HostedZoneId: Z1TQFSYFZUAO0D
+HostedZoneId: Z3VYEIQMVLVSV0
 # The region to be used, if not specified by -e in the command line
 aws_region: us-east-1
 # The key that is used to
@@ -167,6 +167,9 @@ common_packages:
   - kexec-tools
   - sos
   - psacct
+  - dbus
+  - dnsmasq
+  - NetworkManager
 
 rhel_repos:
   - rhel-7-server-rpms

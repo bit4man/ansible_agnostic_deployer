@@ -20,3 +20,24 @@
   with_items: "{{common_packages}}"
   tags:
     - install_common_packages
+
+- name: restart dbus and dnsmasq - bugfix
+  service:
+    name: "{{ item }}"
+    state: restarted
+  with_items:
+    - dnsmasq
+    - dbus
+  tags:
+    - install_common_packages
+
+- name: Enable NetworkManager
+  service:
+    name: NetworkManager
+    state: restarted
+    enabled: yes
+  tags:
+    - install_common_packages
+
+
+

@@ -305,6 +305,7 @@ Resources:
     Properties:
       InstanceId:
         Ref: {{instance['name']}}{{loop.index}}
+      Domain: vpc
 
   {{instance['name']}}{{loop.index}}PublicDNS:
     Type: "AWS::Route53::RecordSetGroup"

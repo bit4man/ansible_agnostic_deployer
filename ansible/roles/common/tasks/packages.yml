@@ -28,6 +28,7 @@
   with_items:
     - dnsmasq
     - dbus
+    - systemd-logind
   tags:
     - install_common_packages
 

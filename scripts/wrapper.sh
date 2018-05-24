@@ -48,7 +48,7 @@ STACK_NAME=${ENVTYPE}-${GUID}
 case $2 in
     provision)
         shift; shift
-        ansible-playbook \
+        ansible-playbook -vvvv \
             ${DEPLOYER_REPO_PATH}/main.yml  \
             -i ${INVENTORY} \
             -e "ANSIBLE_REPO_PATH=${DEPLOYER_REPO_PATH}" \

@@ -14,6 +14,7 @@
         stack_name: "{{project_tag}}"
         state: "absent"
         region: "{{aws_region}}"
+        profile: "{{aws_profile}}"
         disable_rollback: false
         tags:
           Stack: "project {{env_type}}-{{ guid }}"

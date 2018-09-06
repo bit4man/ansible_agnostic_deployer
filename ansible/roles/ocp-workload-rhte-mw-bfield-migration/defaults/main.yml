@@ -1,0 +1,35 @@
+---
+become_override: false
+ocp_username: user1
+ocp_user_needs_quota: True
+
+ocp_user_groups:
+  - OPENTLC-PROJECT-PROVISIONERS
+
+quota_requests_cpu: 5
+quota_limits_cpu: 10
+
+quota_requests_memory: '4Gi'
+quota_limits_memory: '12Gi'
+
+quota_configmaps: 5
+quota_pods: 15
+quota_persistentvolumeclaims: 10
+quota_services: 10
+quota_secrets: 20
+quota_requests_storage: 50Gi
+
+pod_min_mem: 10Mi
+pod_max_mem: 6Gi
+container_default_mem: 1Gi
+container_max_mem: 4Gi
+
+ocp_apps_domain: apps.{{ocp_domain}}
+
+build_status_retries: 20
+build_status_delay: 20
+
+deploy_status_retries: 15
+deploy_status_delay: 20
+
+lab_name: rhte-mw-bfield-migration

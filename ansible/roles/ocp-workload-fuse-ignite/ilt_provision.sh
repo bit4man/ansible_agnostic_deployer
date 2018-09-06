@@ -2,7 +2,15 @@
 
 END_PROJECT_NUM=1
 START_PROJECT_NUM=1
-LOG_FILE=/tmp/ilt_provision_
+WORKLOAD="ocp-workload-fuse-ignite"
+LOG_FILE=/tmp/$WORKLOAD
+
+POSTGRESQL_MEMORY_LIMIT=512Mi
+PROMETHEUS_MEMORY_LIMIT=255Mi
+META_MEMORY_LIMIT=1Gi
+SERVER_MEMORY_LIMIT=2Gi
+PROJECT_PREFIX=fi
+
 
 for var in $@
 do
@@ -22,7 +30,7 @@ function ensurePreReqs() {
             exit 1;
     fi
 
-    LOG_FILE=$LOG_FILE$START_PROJECT_NUM-$END_PROJECT_NUM.log
+    LOG_FILE=$LOG_FILE-$HOST_GUID-$START_PROJECT_NUM-$END_PROJECT_NUM.log
     echo -en "starting\n\n" > $LOG_FILE
 
     echo -en "\n\nProvision log file found at: $LOG_FILE\n";
@@ -33,14 +41,15 @@ function help() {
     echo -en "\n\t--HOST_GUID=*             REQUIRED: specify GUID of target OCP environment)"
     echo -en "\n\t--START_PROJECT_NUM=*     OPTIONAL: specify # of first OCP project to provision (defult = 1))"
     echo -en "\n\t--END_PROJECT_NUM=*       OPTIONAL: specify # of OCP projects to provision (defualt = 1))"
-    echo -en "\n\t-h                        this help manual\n\n"
+    echo -en "\n\t-h                        this help manual"
+    echo -en "\n\n\nExample:                ./roles/$WORKLOAD/ilt_provision.sh --HOST_GUID=dev39 --START_PROJECT_NUM=1 --END_PROJECT_NUM=1\n\n"
 }
 
 
 function login() {
 
     echo -en "\nHOST_GUID=$HOST_GUID\n" >> $LOG_FILE
-    oc login https://master.$HOST_GUID.openshift.opentlc.com -u opentlc-mgr -p r3dh4t1! >> $LOG_FILE
+    oc login https://master.$HOST_GUID.openshift.opentlc.com -u opentlc-mgr -p r3dh4t1!
 }
 
 
@@ -52,28 +61,23 @@ function executeLoop() {
     do
         GUID=$c
         OCP_USERNAME=user$c
-        executeAnsible
+        #executeAnsibleViaBastion
+        executeAnsibleViaLocalhost
     done
 }
 
-function executeAnsible() {
+# Execute Ansible using the oc client on remote bastion node of an OCP workshop environment
+function executeAnsibleViaBastion() {
     TARGET_HOST="bastion.$HOST_GUID.openshift.opentlc.com"
     SSH_USERNAME="jbride-redhat.com"
     SSH_PRIVATE_KEY="id_ocp"
 
-    # NOTE:  Ensure you has ssh'd (as $SSH_USERNMAE) into the bastion node of your OCP cluster environment at $TARGET_HOST and logged in using opentlc-mgr account:
+    # NOTE:  Ensure you have ssh'd (as $SSH_USERNMAE) into the bastion node of your OCP cluster environment at $TARGET_HOST and logged in using opentlc-mgr account:
     #           oc login https://master.$HOST_GUID.openshift.opentlc.com -u opentlc-mgr
-
-    WORKLOAD="ocp-workload-fuse-ignite"
-    POSTGRESQL_MEMORY_LIMIT=512Mi
-    PROMETHEUS_MEMORY_LIMIT=255Mi
-    META_MEMORY_LIMIT=1Gi
-    SERVER_MEMORY_LIMIT=2Gi
-    PROJECT_PREFIX=fi
 
     GUID=$PROJECT_PREFIX$GUID
 
-    echo -en "\n\nexecuteAnsible():  Provisioning project with GUID = $GUID and OCP_USERNAME = $OCP_USERNAME\n" >> $LOG_FILE
+    echo -en "\n\nexecuteAnsibleViaBastion():  Provisioning project with GUID = $GUID and OCP_USERNAME = $OCP_USERNAME\n" >> $LOG_FILE
 
     ansible-playbook -i ${TARGET_HOST}, ./configs/ocp-workloads/ocp-workload.yml \
                  -e"ansible_ssh_private_key_file=~/.ssh/${SSH_PRIVATE_KEY}" \
@@ -89,6 +93,40 @@ function executeAnsible() {
                     -e"META_MEMORY_LIMIT=$META_MEMORY_LIMIT" \
                     -e"SERVER_MEMORY_LIMIT=$SERVER_MEMORY_LIMIT" \
                     -e"ACTION=create" >> $LOG_FILE
+    if [ $? -ne 0 ];
+    then
+        echo -en "\n\n*** Error provisioning where GUID = $GUID\n\n " >> $LOG_FILE
+        echo -en "\n\n*** Error provisioning where GUID = $GUID\n\n "
+        exit 1;
+    fi
+
+}
+
+
+function executeAnsibleViaLocalhost() {
+
+    GUID=$PROJECT_PREFIX$GUID
+
+    echo -en "\n\nexecuteAnsibleViaLocalhost():  Provisioning project with GUID = $GUID and OCP_USERNAME = $OCP_USERNAME\n" >> $LOG_FILE
+
+    ansible-playbook -i localhost, -c local ./configs/ocp-workloads/ocp-workload.yml \
+                    -e"ANSIBLE_REPO_PATH=`pwd`" \
+                    -e"ocp_username=${OCP_USERNAME}" \
+                    -e"ocp_workload=${WORKLOAD}" \
+                    -e"guid=${GUID}" \
+                    -e"ocp_user_needs_quota=true" \
+                    -e"ocp_domain=$HOST_GUID.openshift.opentlc.com" \
+                    -e"POSTGRESQL_MEMORY_LIMIT=$POSTGRESQL_MEMORY_LIMIT" \
+                    -e"PROMETHEUS_MEMORY_LIMIT=$PROMETHEUS_MEMORY_LIMIT" \
+                    -e"META_MEMORY_LIMIT=$META_MEMORY_LIMIT" \
+                    -e"SERVER_MEMORY_LIMIT=$SERVER_MEMORY_LIMIT" \
+                    -e"ACTION=create" >> $LOG_FILE
+    if [ $? -ne 0 ];
+    then
+        echo -en "\n\n*** Error provisioning where GUID = $GUID\n\n " >> $LOG_FILE
+        echo -en "\n\n*** Error provisioning where GUID = $GUID\n\n "
+        exit 1;
+    fi
 }
 
 ensurePreReqs

@@ -1,8 +1,13 @@
+<<<<<<< HEAD
 [OSEv3:vars]
 
 #
-# /etc/ansible/hosts file for OpenShift Container Platform 3.9.14
+# /etc/ansible/hosts file for OpenShift Container Platform 3.9.31
 #
+
+[OSEv3:vars]
+
+>>>>>>> 42f0d0b066bb4c8f11a93397b05df70153ea3575
 ###########################################################################
 ### Ansible Vars
 ###########################################################################
@@ -20,6 +25,12 @@ openshift_disable_check="disk_availability,memory_availability,docker_image_avai
 # default project node selector
 osm_default_node_selector='env=users'
 openshift_hosted_infra_selector='env=infra'
+{% if container_runtime == "cri-o" %}
+openshift_use_crio=True
+openshift_crio_use_rpm=True
+openshift_crio_enable_docker_gc=True
+openshift_crio_docker_gc_node_selector={'runtime': 'cri-o'}
+{% endif %}
 
 # Configure node kubelet arguments. pods-per-core is valid in OpenShift Origin 1.3 or OpenShift Container Platform 3.3 and later.
 openshift_node_kubelet_args={'pods-per-core': ['10'], 'max-pods': ['250'], 'image-gc-high-threshold': ['85'], 'image-gc-low-threshold': ['75']}
@@ -28,16 +39,30 @@ openshift_node_kubelet_args={'pods-per-core': ['10'], 'max-pods': ['250'], 'imag
 # See: https://github.com/nickhammond/ansible-logrotate
 logrotate_scripts=[{"name": "syslog", "path": "/var/log/cron\n/var/log/maillog\n/var/log/messages\n/var/log/secure\n/var/log/spooler\n", "options": ["daily", "rotate 7","size 500M", "compress", "sharedscripts", "missingok"], "scripts": {"postrotate": "/bin/kill -HUP `cat /var/run/syslogd.pid 2> /dev/null` 2> /dev/null || true"}}]
 
+# Necessary for 3.9.30
+oreg_url=registry.access.redhat.com/openshift3/ose-${component}:${version}
+openshift_examples_modify_imagestreams=true
+
 {% if install_glusterfs|bool %}
 ###########################################################################
-### Glusterfs
+### OpenShift CNS
 ###########################################################################
-openshift_storage_glusterfs_namespace=glusterfs
-openshift_storage_glusterfs_name=storage
-openshift_storage_glusterfs_storageclass_default=true
-#openshift_storage_glusterfs_wipe=True
 openshift_master_dynamic_provisioning_enabled=True
-#dynamic_volumes_check=False
+
+# CNS storage cluster
+# From https://github.com/red-hat-storage/openshift-cic
+openshift_storage_glusterfs_namespace=app-storage
+openshift_storage_glusterfs_storageclass=true
+openshift_storage_glusterfs_storageclass_default=true
+openshift_storage_glusterfs_block_deploy=true
+openshift_storage_glusterfs_block_host_vol_create=true
+openshift_storage_glusterfs_block_host_vol_size=40
+openshift_storage_glusterfs_block_storageclass=true
+openshift_storage_glusterfs_block_storageclass_default=false
+
+{% else %}
+# Set this line to enable NFS
+openshift_enable_unsupported_configurations=True
 {% endif %}
 
 ###########################################################################
@@ -62,7 +87,7 @@ openshift_master_default_subdomain={{cloudapps_suffix}}
 openshift_master_overwrite_named_certificates={{openshift_master_overwrite_named_certificates}}
 
 {% if install_lets_encrypt_certificates|bool %}
-openshift_master_named_certificates=[{"certfile": "/root/.acme.sh/{{ master_lb_dns }}/{{ master_lb_dns }}.cer", "keyfile": "/root/.acme.sh/{{ master_lb_dns }}/{{ master_lb_dns }}.key", "cafile": "/root/lets-encrypt-x3-cross-signed.pem"}]
+openshift_master_named_certificates={{lets_encrypt_openshift_master_named_certificates|to_json}}
 {% endif %}
 
 openshift_set_hostname=True
@@ -77,36 +102,30 @@ openshift_portal_net=172.30.0.0/16
 #os_sdn_network_plugin_name='redhat/openshift-ovs-networkpolicy'
 {{multi_tenant_setting}}
 
-# This should be turned on once all dependent scripts use firewalld rather than iptables
-# os_firewall_use_firewalld=True
-
 ###########################################################################
 ### OpenShift admission plugin config
 ###########################################################################
 
-openshift_master_admission_plugin_config={}
+{% if install_openwhisk|bool %} 
+#TODO: add imagePolicy as it is in default
+openshift_master_admission_plugin_config={"openshift.io/ImagePolicy":{"configuration":{"apiVersion":"v1","kind":"ImagePolicyConfig","resolveImages": "AttemptRewrite"}}}
+{% elif admission_plugin_config is defined %}
+openshift_master_admission_plugin_config={{admission_plugin_config|to_json}}
+{% endif %}
 
 ###########################################################################
 ### OpenShift Authentication Vars
 ###########################################################################
 
-{% if install_idm == "ldap" %}
-openshift_master_identity_providers=[{'name': 'ldap', 'challenge': 'true', 'login': 'true', 'kind': 'LDAPPasswordIdentityProvider','attributes': {'id': ['dn'], 'email': ['mail'], 'name': ['cn'], 'preferredUsername': ['uid']}, 'bindDN': 'uid=ose-mwl-auth,cn=users,cn=accounts,dc=opentlc,dc=com', 'bindPassword': '{{bindPassword}}', 'ca': 'ipa-ca.crt','insecure': 'false', 'url': 'ldaps://ipa1.opentlc.com:636/cn=users,cn=accounts,dc=opentlc,dc=com?uid'}]
+{% if install_idm == "ldap" or 'ldap' in install_idms|d([]) %}
 {{openshift_master_ldap_ca_file}}
 {% endif %}
 
-{% if install_idm == "allow_all"  %}
-openshift_master_identity_providers=[{'name': 'allow_all', 'login': 'true', 'challenge': 'true', 'kind': 'AllowAllPasswordIdentityProvider'}]
-{% endif %}
-
-{% if install_idm == "htpasswd"  %}
-# htpasswd auth
-openshift_master_identity_providers=[{'name': 'htpasswd_auth', 'login': 'true', 'challenge': 'true', 'kind': 'HTPasswdPasswordIdentityProvider', 'filename': '/etc/origin/master/htpasswd'}]
-# Defining htpasswd users
-#openshift_master_htpasswd_users={'user1': '<pre-hashed password>', 'user2': '<pre-hashed password>'}
-# or
+{% if install_idm == "htpasswd" or 'htpasswd' in install_idms|d([]) %}
 openshift_master_htpasswd_file=/root/htpasswd.openshift
 {% endif %}
+
+openshift_master_identity_providers='{{identity_providers|to_json}}'
 
 ###########################################################################
 ### OpenShift Metrics and Logging Vars
@@ -126,12 +145,12 @@ openshift_metrics_storage_volume_size=10Gi
 openshift_metrics_storage_labels={'storage': 'metrics'}
 openshift_metrics_cassanda_pvc_storage_class_name=''
 {% endif %}
-{% if not install_nfs|bool and install_glusterfs|bool %}
+
+{% if install_glusterfs|bool %}
 openshift_metrics_storage_kind=dynamic
-openshift_metrics_storage_access_modes=['ReadWriteOnce']
-openshift_metrics_storage_volume_name=metrics
-openshift_metrics_storage_volume_size=10Gi
-openshift_metrics_cassanda_pvc_storage_class_name='glusterfs-storage'
+openshift_metrics_storage_volume_size=20Gi
+openshift_metrics_cassanda_pvc_storage_class_name='glusterfs-storage-block'
+>>>>>>> 42f0d0b066bb4c8f11a93397b05df70153ea3575
 {% endif %}
 
 openshift_metrics_cassandra_nodeselector={"env":"infra"}
@@ -140,21 +159,23 @@ openshift_metrics_heapster_nodeselector={"env":"infra"}
 
 # Add Prometheus Metrics:
 #########################
-openshift_hosted_prometheus_deploy=false
+openshift_hosted_prometheus_deploy=true
+>>>>>>> 42f0d0b066bb4c8f11a93397b05df70153ea3575
 openshift_prometheus_node_selector={"env":"infra"}
 openshift_prometheus_namespace=openshift-metrics
 
 # Prometheus
 {% if install_glusterfs|bool %}
 openshift_prometheus_storage_kind=dynamic
-openshift_prometheus_storage_volume_size=20Gi
+openshift_prometheus_storage_class=glusterfs-storage
+>>>>>>> 42f0d0b066bb4c8f11a93397b05df70153ea3575
 {% elif install_nfs|bool %}
 openshift_prometheus_storage_kind=nfs
 openshift_prometheus_storage_nfs_directory=/srv/nfs
 openshift_prometheus_storage_nfs_options='*(rw,root_squash)'
-openshift_prometheus_storage_volume_size=10Gi
 openshift_prometheus_storage_labels={'storage': 'prometheus'}
 {% endif %}
+openshift_prometheus_storage_volume_size=20Gi
 openshift_prometheus_storage_access_modes=['ReadWriteOnce']
 openshift_prometheus_storage_volume_name=prometheus
 openshift_prometheus_storage_type='pvc'
@@ -162,6 +183,7 @@ openshift_prometheus_storage_type='pvc'
 # For prometheus-alertmanager
 {% if install_glusterfs|bool %}
 openshift_prometheus_alertmanager_storage_kind=dynamic
+openshift_prometheus_alertmanager_storage_class=glusterfs-storage
 {% elif install_nfs|bool %}
 openshift_prometheus_alertmanager_storage_kind=nfs
 openshift_prometheus_alertmanager_storage_nfs_directory=/srv/nfs
@@ -176,6 +198,7 @@ openshift_prometheus_alertmanager_storage_type='pvc'
 # For prometheus-alertbuffer
 {% if install_glusterfs|bool %}
 openshift_prometheus_alertbuffer_storage_kind=dynamic
+openshift_prometheus_alertbuffer_storage_class=glusterfs-storage
 {% elif install_nfs|bool %}
 openshift_prometheus_alertbuffer_storage_kind=nfs
 openshift_prometheus_alertbuffer_storage_nfs_directory=/srv/nfs
@@ -187,10 +210,25 @@ openshift_prometheus_alertbuffer_storage_volume_name=prometheus-alertbuffer
 openshift_prometheus_alertbuffer_storage_volume_size=10Gi
 openshift_prometheus_alertbuffer_storage_type='pvc'
 
-# Necessary for 3.9.14
-# and 3.9.30??
-openshift_prometheus_node_exporter_image_version=v3.9
+# Suggested Quotas and limits for Prometheus components:
+openshift_prometheus_memory_requests=2Gi
+openshift_prometheus_cpu_requests=750m
+openshift_prometheus_memory_limit=2Gi
+openshift_prometheus_cpu_limit=750m
+openshift_prometheus_alertmanager_memory_requests=300Mi
+openshift_prometheus_alertmanager_cpu_requests=200m
+openshift_prometheus_alertmanager_memory_limit=300Mi
+openshift_prometheus_alertmanager_cpu_limit=200m
+openshift_prometheus_alertbuffer_memory_requests=300Mi
+openshift_prometheus_alertbuffer_cpu_requests=200m
+openshift_prometheus_alertbuffer_memory_limit=300Mi
+openshift_prometheus_alertbuffer_cpu_limit=200m
+# The following file will need to be copied over to the bastion before deployment
+# There is an example in ocp-workshop/files
+# openshift_prometheus_additional_rules_file=/root/prometheus_alerts_rules.yml
 
+# Necessary for 3.9.25+
+openshift_prometheus_node_exporter_image_version=v3.9
 
 # Enable cluster logging
 ########################
@@ -206,12 +244,12 @@ openshift_logging_storage_volume_size=10Gi
 openshift_logging_storage_labels={'storage': 'logging'}
 openshift_logging_es_pvc_storage_class_name=''
 {% endif %}
-{% if not install_nfs|bool and install_glusterfs|bool %}
-openshift_logging_storage_kind=dynamic
-openshift_logging_storage_access_modes=['ReadWriteOnce']
-openshift_logging_storage_volume_name=logging
-openshift_logging_storage_volume_size=10Gi
-openshift_logging_es_pvc_storage_class_name='glusterfs-storage'
+{% if install_glusterfs|bool %}
+openshift_logging_es_pvc_dynamic=true
+openshift_logging_es_pvc_size=30Gi
+openshift_logging_es_cluster_size=1
+openshift_logging_es_pvc_storage_class_name='glusterfs-storage-block'
+>>>>>>> 42f0d0b066bb4c8f11a93397b05df70153ea3575
 {% endif %}
 
 openshift_logging_es_cluster_size=1
@@ -230,14 +268,12 @@ openshift_logging_curator_nodeselector={"env":"infra"}
 ### OpenShift Router and Registry Vars
 ###########################################################################
 
-openshift_hosted_router_selector='env=infra'
 openshift_hosted_router_replicas={{infranode_instance_count}}
 
 {% if install_lets_encrypt_certificates|bool %}
-openshift_hosted_router_certificate={"certfile": "/root/.acme.sh/{{ master_lb_dns }}/{{ master_lb_dns }}.cer", "keyfile": "/root/.acme.sh/{{ master_lb_dns }}/{{ master_lb_dns }}.key", "cafile": "/root/lets-encrypt-x3-cross-signed.pem"}
+openshift_hosted_router_certificate={{lets_encrypt_openshift_hosted_router_certificate|to_json}}
 {% endif %}
 
-openshift_hosted_registry_selector='env=infra'
 openshift_hosted_registry_replicas=1
 openshift_hosted_registry_pullthrough=true
 openshift_hosted_registry_acceptschema2=true
@@ -251,11 +287,10 @@ openshift_hosted_registry_storage_provider=s3
 openshift_hosted_registry_storage_s3_accesskey={{ s3user_access_key }}
 openshift_hosted_registry_storage_s3_secretkey={{ s3user_secret_access_key }}
 openshift_hosted_registry_storage_s3_bucket={{ project_tag }}
-openshift_hosted_registry_storage_s3_region={{ aws_region }}
+openshift_hosted_registry_storage_s3_region={{ aws_region_final|d(aws_region) }}
 openshift_hosted_registry_storage_s3_chunksize=26214400
 openshift_hosted_registry_storage_s3_rootdirectory=/registry
 {% endif %}
-
 
 ###########################################################################
 ### OpenShift Service Catalog Vars
@@ -264,7 +299,6 @@ openshift_hosted_registry_storage_s3_rootdirectory=/registry
 openshift_enable_service_catalog=true
 
 template_service_broker_install=true
-template_service_broker_selector={"env":"infra"}
 openshift_template_service_broker_namespaces=['openshift']
 
 ansible_service_broker_install=true
@@ -272,6 +306,8 @@ ansible_service_broker_local_registry_whitelist=['.*-apb$']
 
 {% if install_glusterfs|bool %}
 openshift_hosted_etcd_storage_kind=dynamic
+# Next one doesn't work at the moment - it's still block
+openshift_hosted_etcd_storage_class=glusterfs-storage
 {% elif install_nfs|bool %}
 openshift_hosted_etcd_storage_kind=nfs
 openshift_hosted_etcd_storage_nfs_options="*(rw,root_squash,sync,no_wdelay)"
@@ -300,38 +336,38 @@ new_nodes
 {% endif %}
 
 [masters]
-{% for host in groups['masters'] %}
-{{ hostvars[host].internaldns }} host_zone={{hostvars[host]['placement']}}
+{% for host in groups['masters']|sort %}
+{{ hostvars[host].internaldns }}
 {% endfor %}
 
 [etcd]
-{% for host in groups['masters'] %}
-{{ hostvars[host].internaldns }} host_zone={{hostvars[host]['placement']}}
+{% for host in groups['masters']|sort %}
+{{ hostvars[host].internaldns }}
 {% endfor %}
 
 [nodes]
 ## These are the masters
-{% for host in groups['masters'] %}
-{{ hostvars[host].internaldns }} openshift_hostname={{ hostvars[host].internaldns }} openshift_node_labels="{'logging':'true','openshift_schedulable':'False','cluster': '{{guid}}', 'zone': '{{hostvars[host]['placement']}}'}"
+{% for host in groups['masters']|sort %}
+{{ hostvars[host].internaldns }} openshift_hostname={{ hostvars[host].internaldns }} openshift_node_labels="{'logging':'true','openshift_schedulable':'False','cluster': '{{guid}}', 'runtime': '{{container_runtime}}'}"
 {% endfor %}
 
 ## These are infranodes
-{% for host in groups['infranodes'] %}
-{{ hostvars[host].internaldns }} openshift_hostname={{ hostvars[host].internaldns }} openshift_node_labels="{'logging':'true','cluster': '{{guid}}', 'env':'infra', 'zone': '{{hostvars[host]['placement']}}'}"
+{% for host in groups['infranodes']|sort %}
+{{ hostvars[host].internaldns }} openshift_hostname={{ hostvars[host].internaldns }} openshift_node_labels="{'logging':'true','cluster': '{{guid}}', 'env':'infra', 'runtime': '{{container_runtime}}'}"
 {% endfor %}
 
 ## These are regular nodes
-{% for host in groups['nodes']
+{% for host in groups['nodes']|sort
   if host not in groups['newnodes']|d([])
   and host not in groups['glusterfs']|d([])
   %}
-{{ hostvars[host].internaldns }} openshift_hostname={{ hostvars[host].internaldns }} openshift_node_labels="{'logging':'true','cluster': '{{guid}}', 'env':'users', 'zone': '{{hostvars[host]['placement']}}'}"
+{{ hostvars[host].internaldns }} openshift_hostname={{ hostvars[host].internaldns }} openshift_node_labels="{'logging':'true','cluster': '{{guid}}', 'env':'users', 'runtime': '{{container_runtime}}'}"
 {% endfor %}
 
 {% if groups['glusterfs']|d([])|length > 0 %}
 ## These are glusterfs nodes
-{% for host in groups['glusterfs'] %}
-{{ hostvars[host].internaldns }} openshift_hostname={{ hostvars[host].internaldns }} openshift_node_labels="{'logging':'true','cluster': '{{guid}}', 'env':'glusterfs', 'zone': '{{hostvars[host]['placement']}}'}"
+{% for host in groups['glusterfs']|sort %}
+{{ hostvars[host].internaldns }} openshift_hostname={{ hostvars[host].internaldns }} openshift_node_labels="{'logging':'true','cluster': '{{guid}}', 'env':'glusterfs', 'runtime': '{{container_runtime}}'}"
 {% endfor %}
 {% endif %}
 
@@ -339,8 +375,8 @@ new_nodes
 # scaleup performed, leave an empty group, see:
 # https://docs.openshift.com/container-platform/3.7/install_config/adding_hosts_to_existing_cluster.html
 [new_nodes]
-{% for host in groups['newnodes'] %}
-{{ hostvars[host].internaldns }} openshift_hostname={{ hostvars[host].internaldns }} ansible_ssh_user={{remote_user}} ansible_ssh_private_key_file=~/.ssh/{{key_name}}.pem openshift_node_labels="{'logging':'true','cluster': '{{guid}}', 'env':'users', 'zone': '{{hostvars[host]['placement']}}'}"
+{% for host in groups['newnodes']|sort %}
+{{ hostvars[host].internaldns }} openshift_hostname={{ hostvars[host].internaldns }} ansible_ssh_user={{remote_user}} ansible_ssh_private_key_file=~/.ssh/{{key_name}}.pem openshift_node_labels="{'logging':'true','cluster': '{{guid}}', 'env':'users', 'runtime': '{{container_runtime}}'}"
 {% endfor %}
 {% endif %}
 
@@ -354,7 +390,18 @@ new_nodes
 {% if install_glusterfs|bool %}
 {% set query = "[?name=='support']|[0].volumes[?purpose=='glusterfs'].device_name" %}
 [glusterfs]
-{% for host in groups['glusterfs'] %}
-{{ hostvars[host].internaldns }} glusterfs_ip={{hostvars[host].private_ip_address}} glusterfs_devices='{{instances|json_query(query)|to_json}}'
+{% for host in groups['glusterfs']|sort %}
+{% if  loop.index % 3 == 1 %}
+{%   set glusterfs_zone = 1 %}
+{% elif  loop.index % 3 == 2 %}
+{%   set glusterfs_zone = 2 %}
+{% elif  loop.index % 3 == 0 %}
+{%   set glusterfs_zone = 3 %}
+{% endif %}
+{% if cloud_provider == 'ec2' %}
+{{ hostvars[host].internaldns }} glusterfs_zone={{ glusterfs_zone }} glusterfs_devices='{{instances|json_query(query)|to_json}}'
+{% elif cloud_provider == 'azure' %}
+{{ hostvars[host].internaldns }} glusterfs_zone={{ glusterfs_zone }} glusterfs_devices='{{ [ hostvars[host].glusterfs_device_name ] |to_json}}'
+{% endif %}
 {% endfor %}
 {% endif %}

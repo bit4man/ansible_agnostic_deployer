@@ -1,5 +1,5 @@
 ---
-- name: Step 001 Deploy Infrastructure
+- name: Step 001.1 Deploy Infrastructure
   hosts: localhost
   connection: local
   gather_facts: false
@@ -9,6 +9,7 @@
     - "{{ANSIBLE_REPO_PATH}}/configs/{{ env_type }}/env_secret_vars.yml"
   tags:
     - step001
+    - step001.1
     - deploy_infrastructure
   tasks:
     - name: AWS Generate CloudFormation Template
@@ -87,6 +88,35 @@
       retries: "{{ cloudformation_retries | default(25) }}"
       delay: 60
       ignore_errors: yes
+
+    # for SSH first access to ec2 instances we always use the key defined in the CloudFormation
+    # template by the name {{key_name}}
+    # This variable is used when generation ssh config.
+    # - name: Get ssh pub key
+    #   tags:
+    #     - must
+    #   set_fact:
+    #     ssh_key: "~/.ssh/{{key_name}}.pem"
+
+    - name: Run infra-ec2-template-generate Role
+      import_role:
+        name: "{{ ANSIBLE_REPO_PATH }}/roles/infra-ec2-template-generate"
+
+    - name: Run infra-ec2-template-create Role
+      import_role:
+        name: "{{ ANSIBLE_REPO_PATH }}/roles/infra-ec2-template-create"
+      vars:
+        aws_region_loop: "{{aws_region}}"
+
+    - name: Run infra-ec2-template-create Role into FallBack region
+      include_role:
+        name: "{{ ANSIBLE_REPO_PATH }}/roles/infra-ec2-template-create"
+      vars:
+        aws_region_loop: "{{item}}"
+      with_items: "{{ fallback_regions }}"
+      when:
+        - fallback_regions is defined
+        - cloudformation_out is failed
 
     - name: report Cloudformation error
       fail:
@@ -224,8 +254,32 @@
 - name: Configure local ssh config for bastion proxy use
   include: "{{ANSIBLE_REPO_PATH}}/cloud_providers/{{cloud_provider}}_ssh_config_setup.yml"
   when: groups['bastions']
+      when: not cloudformation_out is succeeded
+      tags:
+        - provision_cf_template
 
-- name: wait_for_connection for all non-windows machines and set hostname
+- name: Step 001.2 Create Inventory and SSH config setup
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  vars_files:
+    - "{{ ANSIBLE_REPO_PATH }}/configs/{{ env_type }}/env_vars.yml"
+    - "{{ ANSIBLE_REPO_PATH }}/configs/{{ env_type }}/env_secret_vars.yml"
+  tags:
+    - step001
+    - step001.2
+    - create_inventory
+    - create_ssh_config
+  tasks:
+    - name: Run infra-ec2-create-inventory Role
+      import_role:
+        name: "{{ ANSIBLE_REPO_PATH }}/roles/infra-ec2-create-inventory"
+    - name: Run Common SSH Config Generator Role
+      import_role:
+        name: "{{ANSIBLE_REPO_PATH}}/roles/infra-common-ssh-config-generate"
+
+- name: Step 001.3 Configure Linux Hosts and Wait for Connection
   hosts:
     - all:!windows:!network
   vars_files:
@@ -237,6 +291,7 @@
   become: true
   tags:
     - step001
+    - step001.3
     - wait_ssh
     - set_hostname
   tasks:
@@ -265,34 +320,36 @@
       retries: 3
       delay: 10
       until: rping | succeeded
+    - name: set facts for remote access
+      tags:
+        - create_inventory
+      set_fact:
+        aws_region_final: "{{hostvars['localhost'].aws_region_final}}"
+        ansible_ssh_extra_args: "{{ ansible_ssh_extra_args|d() }} -F {{ ANSIBLE_REPO_PATH }}/workdir/{{ env_type }}_{{ guid }}_ssh_conf"
 
-    - name: Set hostname based on tag_internaldns
-      hostname:
-        name: "{{hostvars[inventory_hostname].internaldns}}"
-      when: hostvars[inventory_hostname].internaldns is defined
+    - name: Run infra-ec2-wait_for_linux_hosts Role
+      import_role:
+        name: "{{ ANSIBLE_REPO_PATH }}/roles/infra-ec2-wait_for_linux_hosts"
+    - name: Run infra-ec2-linux-set-hostname Role
+      import_role:
+        name: "{{ ANSIBLE_REPO_PATH }}/roles/infra-ec2-linux-set-hostname"
 
-    - stat:
-        path: /etc/cloud/cloud.cfg
-      register: cloud_cfg_file
 
-    - name: disable updating hostname in /etc/cloud/cloud.cfg
-      lineinfile:
-        dest: /etc/cloud/cloud.cfg
-        regexp: 'update_hostname$'
-        line: '# - update_hostname'
-        backup: yes
-      when: cloud_cfg_file.stat.exists
-      tags: disable_cloud_cfg_hostname
 
-- name: Set facts for Windows hosts if any exist and wait_for_connection
+- name: Step 001.4 Configure Windows Hosts and Wait for Connection
   gather_facts: false
   hosts:
     - windows
   vars_files:
     - "{{ANSIBLE_REPO_PATH}}/configs/{{ env_type }}/env_vars.yml"
     - "{{ANSIBLE_REPO_PATH}}/configs/{{ env_type }}/env_secret_vars.yml"
+  tags:
+    - step001
+    - step001.4
   tasks:
     - name: set facts for remote access
+      tags:
+        - create_inventory
       set_fact:
         ansible_become: false
         ansible_connection: winrm
@@ -302,6 +359,7 @@
         ansible_user: Administrator
         ansible_ssh_user: Administrator
         ansible_winrm_server_cert_validation: ignore
+        aws_region_final: "{{hostvars['localhost'].aws_region_final}}"
 
     - name: wait for windows host to be available
       wait_for_connection:
@@ -327,3 +385,6 @@
         connect_timeout: 60
         delay: 120
       when: rwait|failed
+    - name: Run infra-ec2-wait_for_linux_hosts Role
+      import_role:
+        name: "{{ ANSIBLE_REPO_PATH }}/roles/infra-ec2-wait_for_windows_hosts"

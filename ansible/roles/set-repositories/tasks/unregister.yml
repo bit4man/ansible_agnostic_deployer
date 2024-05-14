@@ -1,0 +1,4 @@
+---
+- name: unreg | Unregister From Subscription Manager
+  ansible.builtin.command: subscription-manager unregister
+  ignore_errors: true

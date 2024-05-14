@@ -1,2 +1,5 @@
 ---
-# handlers file for bastion
+- name: restart_sshd
+  service:
+    name: sshd
+    state: restarted

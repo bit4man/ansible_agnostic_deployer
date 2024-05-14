@@ -5,7 +5,7 @@
 
 - name: define ocp_sso_project
   set_fact:
-    sso_project: "rh-sso-{{guid}}"
+    sso_project: "sso-{{guid}}"
 
 - name: define ocp_threescale_project
   set_fact:
@@ -18,6 +18,10 @@
 - name: define ocp_www_project
   set_fact:
     www_project: "www-{{guid}}"
+
+- name: define ocp_solex_project
+  set_fact:
+    solex_project: "solex-{{guid}}"
 
 - name: Remove user Quota - oc delete clusterresourcequota  "clusterquota-{{ocp_username}}-{{guid}}"
   shell: oc delete clusterresourcequota clusterquota-{{ocp_username}}-{{guid}}
@@ -42,6 +46,13 @@
 - name: Remove user Project www_project
   shell: "oc delete project {{www_project}}"
   ignore_errors: true
+
+- name: Remove user project for Solution explorer
+  k8s:
+    state: absent
+    api_version: v1
+    kind: Namespace
+    name: '{{ solex_project }}'
 
 - name: post_workload Tasks Complete
   debug:

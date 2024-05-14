@@ -11,8 +11,7 @@
 |=========================================================
 |Software |Version  |Source |Notes
 | ansible_agnostic_deployer
-| commit {{ ansible_agnostic_deployer_head.stdout }}
-| https://github.com/sborenst/ansible_agnostic_deployer
+| https://github.com/redhat-cop/agnosticd
 | date of deployment: {{ ansible_date_time.date }}
 |=========================================================
 
@@ -47,7 +46,7 @@ Unknown
 
 == Architecture
 
-* AWS region: {{ aws_region }}
+* AWS region: {{ aws_region_final|d(aws_region) }}
 
 .Environment Size
 [width="100%",options="header",cols=",,,,a"]
@@ -56,7 +55,7 @@ Unknown
 {% for host in groups[env_all_hosts] -%}
 | {{ hostvars[host].ansible_hostname }}
 | {{ hostvars[host].ec2_instance_type | default(hostvars[host].instance_type) | default('unknown') }}
-| {{ hostvars[host].ansible_processor_cores }} x {{ hostvars[host].ansible_processor[1] }}
+| {{ hostvars[host].ansible_processor_cores | d('...') }} x {{ hostvars[host].ansible_processor[2] | default('...') }}
 | {{ '%0.2f'| format(hostvars[host].ansible_memtotal_mb|int / 1024) }} GB RAM
 | {% for dev in hostvars[host].ansible_devices %}
 - {{ dev }}: {{ hostvars[host].ansible_devices[dev].size }}
@@ -74,7 +73,7 @@ Unknown
 | {{ hostvars[host].internaldns }}
 | {{ hostvars[host].public_dns_name }}
 | {{ hostvars[host].public_ip_address }}
-| {{ hostvars[host].key_name }}
+| {{ hostvars[host].ssh_provision_key_name }}
 {% endfor %}
 |=========================================================
 

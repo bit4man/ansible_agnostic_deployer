@@ -1,40 +1,37 @@
 ---
+- import_playbook: ../include_vars.yml
+
 - name: Delete Infrastructure
   hosts: localhost
   connection: local
-  gather_facts: False
-  become: no
-  vars_files:
-    - "{{ ANSIBLE_REPO_PATH }}/configs/{{ env_type }}/env_vars.yml"
-    - "{{ ANSIBLE_REPO_PATH }}/configs/{{ env_type }}/env_secret_vars.yml"
-
+  gather_facts: false
+  become: false
   tasks:
-    - name: Destroy cloudformation template
-      cloudformation:
-        stack_name: "{{project_tag}}"
-        state: "absent"
-        region: "{{aws_region}}"
-        disable_rollback: false
-        tags:
-          Stack: "project {{env_type}}-{{ guid }}"
-      tags:
-        - destroying
-        - destroy_cf_deployment
-        - destroy_cloud_deployment
-      register: cloudformation_result
-      until: cloudformation_result|succeeded
-      retries: 5
-      delay: 60
-      ignore_errors: yes
-      when: cloud_provider == 'ec2'
+    - name: Run infra-aws-capacity-reservation
+      include_role:
+        name: infra-aws-capacity-reservation
+      vars:
+        ACTION: destroy
 
-    - name: report Cloudformation error
-      fail:
-        msg: "FAIL {{ project_tag }} Destroy Cloudformation"
+    - name: Set facts for ssh provision SSH key
+      include_role:
+        name: create_ssh_provision_key
       when:
-        - not cloudformation_result|succeeded
-        - cloud_provider == 'ec2'
-      tags:
-        - destroying
-        - destroy_cf_deployment
-        - destroy_cloud_deployment
+        - ssh_provision_key_name is undefined
+
+    - name: Destroy infra ec2 keypair
+      include_role:
+        name: infra-ec2-ssh-key
+      vars:
+        ACTION: destroy
+
+    - name: Run infra-aws-open-environment Role
+      include_role:
+        name: infra-aws-open-environment
+      vars:
+        ACTION: destroy
+      when: agnosticd_open_environment | default(false) | bool
+
+    - name: Run infra-ec2-template-destroy
+      include_role:
+        name: infra-ec2-template-destroy
